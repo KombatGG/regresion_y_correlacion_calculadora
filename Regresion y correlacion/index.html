@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regresión y correlación</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main>
+  <h1>Regresión y correlación</h1>
+
+  <nav class="tabs">
+    <button class="tab activo" data-sec="regresion">Regresión</button>
+    <button class="tab" data-sec="correlacion">Intervalo de confianza y prueba de hipótesis</button>
+    <button class="tab" data-sec="normal">Probabilidad bivariada</button>
+  </nav>
+
+  <!-- SECCIÓN 1: REGRESIÓN -->
+  <section id="regresion" class="seccion activa">
+    <div class="fila">
+      <select id="tipo">
+        <option value="lineal">Regresión lineal</option>
+        <option value="multiple">Regresión múltiple</option>
+      </select>
+    </div>
+    <p class="instrucciones" id="instrucciones"></p>
+
+    <div class="fila botones">
+      <button id="btn-fila">+ Agregar fila</button>
+      <button id="btn-var" hidden>+ Agregar variable X</button>
+      <button id="btn-limpiar">Limpiar todo</button>
+    </div>
+
+    <div class="tabla-wrap"><table id="tabla"></table></div>
+    <div class="fila botones">
+      <button id="btn-calcular" class="primario">Calcular</button>
+    </div>
+    <p id="msg-reg" class="error"></p>
+    <div id="res-reg" class="resultados"></div>
+    <canvas id="grafica" width="620" height="340" hidden></canvas>
+  </section>
+
+  <!-- SECCIÓN 2: IC Y PRUEBA DE HIPÓTESIS DE r -->
+  <section id="correlacion" class="seccion">
+    <p class="instrucciones">Calcula el intervalo de confianza y la prueba de hipótesis del coeficiente de correlación. Escribe r y n, o tómalos de la regresión.</p>
+    <div class="campos">
+      <label>r <input type="number" id="c-r" step="any"></label>
+      <label>n (tamaño de muestra) <input type="number" id="c-n" min="4"></label>
+      <label>Nivel de significancia α <input type="number" id="c-alfa" step="any" value="0.05"></label>
+      <label>ρ₀ (valor de la hipótesis) <input type="number" id="c-rho0" step="any" value="0"></label>
+      <label>Tipo de prueba
+        <select id="c-cola">
+          <option value="bi">Bilateral (ρ ≠ ρ₀)</option>
+          <option value="der">Unilateral/Cola derecha (ρ &gt; ρ₀)</option>
+          <option value="izq">Unilateral/Cola izquierda (ρ &lt; ρ₀)</option>
+        </select>
+      </label>
+    </div>
+    <div class="fila botones">
+      <button id="c-usar">Usar r y n de la regresión</button>
+      <button id="c-calcular" class="primario">Calcular</button>
+    </div>
+    <p id="msg-cor" class="error"></p>
+    <div id="res-cor" class="resultados"></div>
+  </section>
+
+  <!-- SECCIÓN 3: PROBABILIDAD BIVARIADA NORMAL -->
+  <section id="normal" class="seccion">
+    <div class="fila">
+      <select id="n-tipo">
+        <option value="cond">1. Condicional (Y dado X = x₀)</option>
+        <option value="conj">2. Conjunta por rangos</option>
+        <option value="marg">3. Marginal (X o Y)</option>
+        <option value="lin">4. Combinación lineal aX + bY</option>
+        <option value="dens">5. Densidad conjunta f(x₀, y₀)</option>
+      </select>
+    </div>
+    <p class="instrucciones" id="n-instr"></p>
+
+    <div class="campos">
+      <label>μX (media de X) <input type="number" id="n-mx" step="any"></label>
+      <label>σX (desv. estándar de X) <input type="number" id="n-sx" step="any"></label>
+      <label>μY (media de Y) <input type="number" id="n-my" step="any"></label>
+      <label>σY (desv. estándar de Y) <input type="number" id="n-sy" step="any"></label>
+      <label data-m="cond conj lin dens">ρ (correlación) <input type="number" id="n-rho" step="any"></label>
+    </div>
+    <div class="campos" data-m="cond">
+      <label>x₀ (valor dado de X) <input type="number" id="n-x0" step="any"></label>
+      <label>y₀ (límite de Y) <input type="number" id="n-y0" step="any"></label>
+    </div>
+    <div class="campos" data-m="conj">
+      <label>x₁ (desde) <input type="number" id="n-x1" step="any"></label>
+      <label>x₂ (hasta) <input type="number" id="n-x2" step="any"></label>
+      <label>y₁ (desde) <input type="number" id="n-y1" step="any"></label>
+      <label>y₂ (hasta) <input type="number" id="n-y2" step="any"></label>
+    </div>
+    <div class="campos" data-m="marg">
+      <label>Variable
+        <select id="n-var"><option value="X">X</option><option value="Y">Y</option></select>
+      </label>
+      <label>Límite <input type="number" id="n-lim" step="any"></label>
+    </div>
+    <div class="campos" data-m="dens">
+      <label>x₀ (valor de X) <input type="number" id="n-fx" step="any"></label>
+      <label>y₀ (valor de Y) <input type="number" id="n-fy" step="any"></label>
+    </div>
+    <div class="campos" data-m="lin">
+      <label>a (coeficiente de X) <input type="number" id="n-a" step="any"></label>
+      <label>b (coeficiente de Y) <input type="number" id="n-b" step="any"></label>
+      <label>c (límite) <input type="number" id="n-c" step="any"></label>
+    </div>
+
+    <div class="fila botones">
+      <button id="n-usar">Usar datos de la regresión</button>
+      <button id="n-calcular" class="primario">Calcular</button>
+    </div>
+    <p id="msg-nor" class="error"></p>
+    <div id="res-nor" class="resultados"></div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
