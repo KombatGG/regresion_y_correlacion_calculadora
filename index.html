@@ -43,13 +43,20 @@
 
   <!-- SECCIÓN 2: IC Y PRUEBA DE HIPÓTESIS DE r -->
   <section id="correlacion" class="seccion">
-    <p class="instrucciones">Calcula el intervalo de confianza y la prueba de hipótesis del coeficiente de correlación. Escribe r y n, o tómalos de la regresión.</p>
+    <div class="fila">
+      <select id="c-modo">
+        <option value="prueba">1. Prueba de hipótesis</option>
+        <option value="ic">2. Intervalo de confianza</option>
+        <option value="ambos">3. Prueba de hipótesis e intervalo de confianza</option>
+      </select>
+    </div>
+    <p class="instrucciones" id="c-instr"></p>
     <div class="campos">
       <label>r <input type="number" id="c-r" step="any"></label>
       <label>n (tamaño de muestra) <input type="number" id="c-n" min="4"></label>
       <label>Nivel de significancia α <input type="number" id="c-alfa" step="any" value="0.05"></label>
-      <label>ρ₀ (valor de la hipótesis) <input type="number" id="c-rho0" step="any" value="0"></label>
-      <label>Tipo de prueba
+      <label data-m="prueba ambos">ρ₀ (valor para la hipótesis) <input type="number" id="c-rho0" step="any" value="0"></label>
+      <label data-m="prueba ambos">Tipo de prueba
         <select id="c-cola">
           <option value="bi">Bilateral (ρ ≠ ρ₀)</option>
           <option value="der">Unilateral/Cola derecha (ρ &gt; ρ₀)</option>
@@ -69,11 +76,11 @@
   <section id="normal" class="seccion">
     <div class="fila">
       <select id="n-tipo">
-        <option value="cond">1. Condicional (Y dado X = x₀)</option>
-        <option value="conj">2. Conjunta por rangos</option>
-        <option value="marg">3. Marginal (X o Y)</option>
-        <option value="lin">4. Combinación lineal aX + bY</option>
-        <option value="dens">5. Densidad conjunta f(x₀, y₀)</option>
+        <option value="dens">1. Densidad conjunta f(x, y)</option>
+        <option value="cond">2. Condicional (Y dado X = x₀)</option>
+        <option value="conj">3. Conjunta por rangos</option>
+        <option value="marg">4. Marginal (X o Y)</option>
+        <option value="lin">5. Combinación lineal aX + bY</option>
       </select>
     </div>
     <p class="instrucciones" id="n-instr"></p>
@@ -101,9 +108,12 @@
       </label>
       <label>Límite <input type="number" id="n-lim" step="any"></label>
     </div>
-    <div class="campos" data-m="dens">
-      <label>x₀ (valor de X) <input type="number" id="n-fx" step="any"></label>
-      <label>y₀ (valor de Y) <input type="number" id="n-fy" step="any"></label>
+    <div data-m="dens">
+      <label class="check"><input type="checkbox" id="n-punto"> Evaluar densidad en un punto x, y</label>
+      <div class="campos" id="n-punto-campos" hidden>
+        <label>x <input type="number" id="n-fx" step="any"></label>
+        <label>y <input type="number" id="n-fy" step="any"></label>
+      </div>
     </div>
     <div class="campos" data-m="lin">
       <label>a (coeficiente de X) <input type="number" id="n-a" step="any"></label>
@@ -117,6 +127,8 @@
     </div>
     <p id="msg-nor" class="error"></p>
     <div id="res-nor" class="resultados"></div>
+    <canvas id="grafica-nor" width="620" height="340" hidden></canvas>
+    <p id="nota-nor" class="instrucciones" hidden></p>
   </section>
 </main>
 <script src="app.js"></script>

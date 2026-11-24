@@ -44,6 +44,8 @@ button.primario:hover { background: #444; }
 #lbl-k { flex-direction: row; align-items: center; gap: 8px; }
 #lbl-k input { width: 70px; }
 
+.check { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: .9rem; margin-bottom: 14px; cursor: pointer; }
+
 /* Tabla de datos */
 .tabla-wrap { overflow-x: auto; }
 table { border-collapse: collapse; }

@@ -293,12 +293,12 @@ function calcularRegresion() {
   }
 }
 
-function graficar(xs, ys, f, etX, etY) {
-  const cv = $('grafica'), g = cv.getContext('2d');
+function graficar(xs, ys, f, etX, etY, id = 'grafica', marca = null) {
+  const cv = $(id), g = cv.getContext('2d');
   cv.hidden = false;
   const W = cv.width, H = cv.height, L = 60, R = 20, T = 20, B = 50;
   const rango = a => { const mn = Math.min(...a), mx = Math.max(...a), p = (mx - mn || 1) * 0.08; return [mn - p, mx + p]; };
-  const [x0, x1] = rango(xs), [y0, y1] = rango([...ys, f(x0), f(x1)]);
+  const [x0, x1] = rango(marca ? [...xs, marca.x] : xs), [y0, y1] = rango([...ys, f(x0), f(x1), ...(marca ? [marca.y] : [])]);
   const px = v => L + (v - x0) / (x1 - x0) * (W - L - R);
   const py = v => H - B - (v - y0) / (y1 - y0) * (H - T - B);
   g.clearRect(0, 0, W, H); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
@@ -317,6 +317,12 @@ function graficar(xs, ys, f, etX, etY) {
   g.beginPath(); g.moveTo(px(x0), py(f(x0))); g.lineTo(px(x1), py(f(x1))); g.stroke();
   g.fillStyle = '#1a73e8';
   xs.forEach((v, i) => { g.beginPath(); g.arc(px(v), py(ys[i]), 4, 0, 2 * Math.PI); g.fill(); });
+  if (marca) { // punto (x, y) evaluado
+    g.fillStyle = '#e65100'; g.strokeStyle = '#fff'; g.lineWidth = 2;
+    g.beginPath(); g.arc(px(marca.x), py(marca.y), 6, 0, 2 * Math.PI); g.fill(); g.stroke();
+    g.fillStyle = '#1a1a1a'; g.textAlign = px(marca.x) > W - 110 ? 'right' : 'left';
+    g.fillText(`(${fmt(marca.x, 2)}, ${fmt(marca.y, 2)})`, px(marca.x) + (g.textAlign === 'left' ? 10 : -10), py(marca.y) - 10);
+  }
 }
 
 $('tipo').addEventListener('change', () => { kMult = 2; construirTabla(); });
@@ -343,7 +349,21 @@ tabla.addEventListener('paste', e => { // pegar desde Excel
   }));
 });
 
-/* ================= Sección 2: IC y prueba de r ================= */
+/* ================= Sección 2: IC y prueba de hipótesis de r ================= */
+const INSTR_C = {
+  prueba: 'Prueba de hipótesis del coeficiente de correlación: plantea H₀ y H₁, calcula el estadístico, el valor crítico y el valor p, y toma una decisión. Escribe r y n, o tómalos de la regresión.',
+  ic: 'Intervalo de confianza para el coeficiente de correlación poblacional ρ, con la transformación z de Fisher. Escribe r y n, o tómalos de la regresión.',
+  ambos: 'Calcula la prueba de hipótesis y el intervalo de confianza del coeficiente de correlación. Escribe r y n, o tómalos de la regresión.'
+};
+
+function modoCor() {
+  const m = $('c-modo').value;
+  document.querySelectorAll('#correlacion [data-m]').forEach(el => { el.hidden = !el.dataset.m.split(' ').includes(m); });
+  $('c-instr').textContent = INSTR_C[m];
+  $('msg-cor').textContent = ''; $('res-cor').innerHTML = '';
+}
+$('c-modo').addEventListener('change', modoCor);
+
 $('c-usar').addEventListener('click', () => {
   if (!datos) { $('msg-cor').textContent = 'Primero calcula la regresión en la sección Regresión.'; return; }
   $('msg-cor').textContent = '';
@@ -353,74 +373,72 @@ $('c-usar').addEventListener('click', () => {
 $('c-calcular').addEventListener('click', () => {
   $('msg-cor').textContent = '';
   try {
+    const modo = $('c-modo').value, hacePrueba = modo !== 'ic', haceIC = modo !== 'prueba';
     const r = parseFloat($('c-r').value), n = parseInt($('c-n').value);
-    const alfa = parseFloat($('c-alfa').value), rho0 = parseFloat($('c-rho0').value) || 0;
-    const cola = $('c-cola').value;
+    const alfa = parseFloat($('c-alfa').value);
     if (!(Math.abs(r) < 1)) throw new Error('r debe estar entre −1 y 1 (sin incluirlos).');
     if (!(n >= 4)) throw new Error('n debe ser al menos 4.');
     if (!(alfa > 0 && alfa < 1)) throw new Error('α debe estar entre 0 y 1.');
-    if (!(Math.abs(rho0) < 1)) throw new Error('ρ₀ debe estar entre −1 y 1.');
-
-    // ---- Intervalo de confianza (transformación z de Fisher) ----
-    const zr = Math.atanh(r), ee = 1 / Math.sqrt(n - 3), zc = invN(1 - alfa / 2);
-    const lo = Math.tanh(zr - zc * ee), hi = Math.tanh(zr + zc * ee);
+    let rho0 = 0, cola = 'bi';
+    if (hacePrueba) {
+      rho0 = parseFloat($('c-rho0').value) || 0; cola = $('c-cola').value;
+      if (!(Math.abs(rho0) < 1)) throw new Error('ρ₀ debe estar entre −1 y 1.');
+    }
+    const zr = Math.atanh(r);
+    let html = '';
 
     // ---- Prueba de hipótesis ----
-    const usaT = rho0 === 0, gl = n - 2, zr0 = Math.atanh(rho0), r0 = fmt(rho0);
-    const est = usaT ? r * Math.sqrt(gl) / Math.sqrt(1 - r * r) : (zr - zr0) * Math.sqrt(n - 3);
-    const cdf = usaT ? v => cdfT(v, gl) : cdfN;
-    const inv = usaT ? q => invT(q, gl) : invN;
-    const bi = cola === 'bi';
-    const q = inv(bi ? 1 - alfa / 2 : 1 - alfa);
-    const area = bi ? alfa / 2 : alfa;
-    let p, rechaza, h1, crit, comp, nomCola;
-    if (cola === 'bi') {
-      p = 2 * (1 - cdf(Math.abs(est))); rechaza = Math.abs(est) > q; h1 = `ρ ≠ ${r0}`; crit = `±${fmt(q)}`;
-      comp = `|${fmt(est)}| ${rechaza ? '&gt;' : '≤'} ${fmt(q)}`; nomCola = 'bilateral';
-    } else if (cola === 'der') {
-      p = 1 - cdf(est); rechaza = est > q; h1 = `ρ &gt; ${r0}`; crit = fmt(q);
-      comp = `${fmt(est)} ${rechaza ? '&gt;' : '≤'} ${fmt(q)}`; nomCola = 'de cola derecha';
-    } else {
-      p = cdf(est); rechaza = est < -q; h1 = `ρ &lt; ${r0}`; crit = fmt(-q);
-      comp = `${fmt(est)} ${rechaza ? '&lt;' : '≥'} ${fmt(-q)}`; nomCola = 'de cola izquierda';
-    }
-    const letra = usaT ? 't' : 'z';
+    if (hacePrueba) {
+      const usaT = rho0 === 0, gl = n - 2, zr0 = Math.atanh(rho0), r0 = fmt(rho0);
+      const est = usaT ? r * Math.sqrt(gl) / Math.sqrt(1 - r * r) : (zr - zr0) * Math.sqrt(n - 3);
+      const cdf = usaT ? v => cdfT(v, gl) : cdfN;
+      const inv = usaT ? q => invT(q, gl) : invN;
+      const bi = cola === 'bi';
+      const q = inv(bi ? 1 - alfa / 2 : 1 - alfa);
+      const area = bi ? alfa / 2 : alfa;
+      let p, rechaza, h1, crit, comp, nomCola;
+      if (cola === 'bi') {
+        p = 2 * (1 - cdf(Math.abs(est))); rechaza = Math.abs(est) > q; h1 = `ρ ≠ ${r0}`; crit = `±${fmt(q)}`;
+        comp = `|${fmt(est)}| ${rechaza ? '&gt;' : '≤'} ${fmt(q)}`; nomCola = 'bilateral';
+      } else if (cola === 'der') {
+        p = 1 - cdf(est); rechaza = est > q; h1 = `ρ &gt; ${r0}`; crit = fmt(q);
+        comp = `${fmt(est)} ${rechaza ? '&gt;' : '≤'} ${fmt(q)}`; nomCola = 'de cola derecha';
+      } else {
+        p = cdf(est); rechaza = est < -q; h1 = `ρ &lt; ${r0}`; crit = fmt(-q);
+        comp = `${fmt(est)} ${rechaza ? '&lt;' : '≥'} ${fmt(-q)}`; nomCola = 'de cola izquierda';
+      }
+      const letra = usaT ? 't' : 'z';
 
-    const desarrollo = usaT
-      ? `t = r·√(n − 2) / √(1 − r²)
+      const desarrollo = usaT
+        ? `t = r·√(n − 2) / √(1 − r²)
 t = (${fmt(r)})·√(${n} − 2) / √(1 − (${fmt(r)})²)
 t = (${fmt(r)})·√${gl} / √${fmt(1 - r * r)}
 t = (${fmt(r)})(${fmt(Math.sqrt(gl))}) / ${fmt(Math.sqrt(1 - r * r))}
 t = ${fmt(est)}`
-      : `z_r = ½·ln[(1 + r)/(1 − r)] = ${fmt(zr)}
+        : `z_r = ½·ln[(1 + r)/(1 − r)] = ${fmt(zr)}
 z_ρ₀ = ½·ln[(1 + ρ₀)/(1 − ρ₀)] = ${fmt(zr0)}
 z = (z_r − z_ρ₀)·√(n − 3)
 z = (${fmt(zr)} − (${fmt(zr0)}))·√(${n} − 3)
 z = ${fmt(est)}`;
 
-    const paso3 = usaT
-      ? `<p>Se calculan con el tamaño de la muestra: gl = n − 2.</p><pre>gl = n − 2
+      const paso3 = usaT
+        ? `<p>Se calculan con el tamaño de la muestra: gl = n − 2.</p><pre>gl = n − 2
 gl = ${n} − 2
 gl = ${gl}</pre>`
-      : `<p>Como ρ₀ ≠ 0 se usa la transformación z de Fisher, que sigue una distribución normal estándar; por eso no hay grados de libertad. El error estándar usa n − 3 = ${n - 3}.</p>`;
+        : `<p>Como ρ₀ ≠ 0 se usa la transformación z de Fisher, que sigue una distribución normal estándar; por eso no hay grados de libertad. El error estándar usa n − 3 = ${n - 3}.</p>`;
 
-    const paso4 = `<p>Se busca en la tabla ${usaT ? `t con ${gl} grados de libertad` : 'normal estándar'} el valor que deja un área de ${fmt(area, 6)} en ${bi ? 'cada cola' : 'la cola ' + (cola === 'der' ? 'derecha' : 'izquierda')}.</p><pre>α = ${fmt(alfa, 6)}${bi ? `
+      const paso4 = `<p>Se busca en la tabla ${usaT ? `t con ${gl} grados de libertad` : 'normal estándar'} el valor que deja un área de ${fmt(area, 6)} en ${bi ? 'cada cola' : 'la cola ' + (cola === 'der' ? 'derecha' : 'izquierda')}.</p><pre>α = ${fmt(alfa, 6)}${bi ? `
 α/2 = ${fmt(alfa / 2, 6)}` : ''}${usaT ? `
 gl = ${gl}` : ''}
 Valor crítico = ${crit}</pre>`;
 
-    const afirma = rho0 === 0
-      ? `existe una correlación lineal ${cola === 'der' ? 'positiva ' : cola === 'izq' ? 'negativa ' : ''}significativa entre las dos variables`
-      : `la correlación poblacional ρ ${bi ? 'es distinta de' : cola === 'der' ? 'es mayor que' : 'es menor que'} ${r0}`;
-    const sig = `${fmt(alfa * 100, 2)} %`;
-    const conclusion = `${rechaza ? 'Existe' : 'No existe'} evidencia estadística suficiente, con un nivel de significancia del ${sig}, para afirmar que ${afirma}.`;
+      const afirma = rho0 === 0
+        ? `existe una correlación lineal ${cola === 'der' ? 'positiva ' : cola === 'izq' ? 'negativa ' : ''}significativa entre las dos variables`
+        : `la correlación poblacional ρ ${bi ? 'es distinta de' : cola === 'der' ? 'es mayor que' : 'es menor que'} ${r0}`;
+      const sig = `${fmt(alfa * 100, 2)} %`;
+      const conclusion = `${rechaza ? 'Existe' : 'No existe'} evidencia estadística suficiente, con un nivel de significancia del ${sig}, para afirmar que ${afirma}.`;
 
-    $('res-cor').innerHTML = `
-      <h3>Intervalo de confianza del coeficiente de correlación (${fmt((1 - alfa) * 100, 2)} %)</h3>
-      <dl><dt>T. Fisher (zᵣ)</dt><dd>${fmt(zr)}</dd><dt>Error estándar (1/√(n−3))</dt><dd>${fmt(ee)}</dd>
-      <dt>Valor crítico normal z</dt><dd>${fmt(zc)}</dd>
-      <dt>Intervalo de confianza para ρ</dt><dd>${fmt(lo)} ≤ ρ ≤ ${fmt(hi)}</dd></dl><br>
-
+      html += `
       <h3>Prueba de hipótesis del coeficiente de correlación</h3>
       ${bloque('Datos:', [`n = ${n}`, `r = ${fmt(r)}`, `α = ${fmt(alfa, 6)}`, ...(usaT ? [] : [`ρ₀ = ${r0}`]), `prueba ${nomCola}`])}
       ${bloque('Resultados:', [
@@ -450,6 +468,24 @@ H₁: ${h1}</pre></div>
         <pre>${comp}</pre>
         <div class="decision"><strong>${rechaza ? 'SE RECHAZA LA HIPÓTESIS NULA' : 'NO SE RECHAZA LA HIPÓTESIS NULA'}</strong></div>
         <p><strong>Conclusión:</strong> ${conclusion}</p></div>`;
+    }
+
+    // ---- Intervalo de confianza (transformación z de Fisher) ----
+    if (haceIC) {
+      const ee = 1 / Math.sqrt(n - 3), zc = invN(1 - alfa / 2);
+      const zlo = zr - zc * ee, zhi = zr + zc * ee, lo = Math.tanh(zlo), hi = Math.tanh(zhi);
+      const conf = fmt((1 - alfa) * 100, 2);
+      html += `
+      <h3>Intervalo de confianza del coeficiente de correlación (${conf} %)</h3>
+      ${bloque('Datos:', [`n = ${n}`, `r = ${fmt(r)}`, `α = ${fmt(alfa, 6)}`, `nivel de confianza = ${conf} %`])}
+      <dl><dt>T. Fisher (zᵣ)</dt><dd>${fmt(zr)}</dd><dt>Error estándar (1/√(n−3))</dt><dd>${fmt(ee)}</dd>
+      <dt>Valor crítico normal z</dt><dd>${fmt(zc)}</dd>
+      <dt>Intervalo de confianza para ρ</dt><dd>${fmt(lo)} ≤ ρ ≤ ${fmt(hi)}</dd></dl>
+      <p><strong>Desarrollo:</strong></p>
+      ${paso('Construcción del intervalo', 'Se transforma r con Fisher, se arma el intervalo en la escala z y se regresa a la escala de r con la tangente hiperbólica.',
+        `z_r = ½·ln[(1 + r)/(1 − r)] = ${fmt(zr)}\nError estándar = 1/√(n − 3) = 1/√${n - 3} = ${fmt(ee)}\nz_(α/2) = ${fmt(zc)}\nLímites en z: z_r ± z_(α/2)·EE = ${fmt(zr)} ± (${fmt(zc)})(${fmt(ee)})\n   = [${fmt(zlo)}, ${fmt(zhi)}]\nρ inferior = tanh(${fmt(zlo)}) = ${fmt(lo)}\nρ superior = tanh(${fmt(zhi)}) = ${fmt(hi)}`)}`;
+    }
+    $('res-cor').innerHTML = html;
   } catch (e) {
     $('msg-cor').textContent = e.message;
   }
@@ -461,7 +497,7 @@ const INSTR_N = {
   conj: 'Calcula P(x₁ ≤ X ≤ x₂, y₁ ≤ Y ≤ y₂). Deja un límite vacío para usar infinito (−∞ o +∞); escribe al menos uno.',
   marg: 'Calcula P(X ≤ límite) o P(Y ≤ límite). Solo necesitas la media y la desviación estándar de la variable elegida.',
   lin: 'Calcula P(aX + bY ≤ c). Una combinación lineal de variables normales también es normal.',
-  dens: 'Calcula la altura de la función de densidad conjunta f(x₀, y₀) en un punto. La densidad no es una probabilidad.'
+  dens: 'Con solo μX, σX, μY, σY y ρ se obtienen la covarianza, la matriz de covarianzas, la constante de la densidad, las distribuciones marginales y las condicionales. Marca la casilla para evaluar además f(x, y) y las probabilidades en un punto (x, y).'
 };
 
 function modoNormal() {
@@ -469,8 +505,36 @@ function modoNormal() {
   document.querySelectorAll('#normal [data-m]').forEach(el => { el.hidden = !el.dataset.m.split(' ').includes(m); });
   $('n-instr').textContent = INSTR_N[m];
   $('msg-nor').textContent = ''; $('res-nor').innerHTML = '';
+  $('grafica-nor').hidden = true; $('nota-nor').hidden = true;
+  $('n-punto-campos').hidden = !$('n-punto').checked;
 }
+$('n-punto').addEventListener('change', () => { $('n-punto-campos').hidden = !$('n-punto').checked; });
 $('n-tipo').addEventListener('change', modoNormal);
+
+let usoDatos = false; // true si los parámetros vienen de la regresión (se grafican los datos reales)
+['n-mx', 'n-sx', 'n-my', 'n-sy', 'n-rho'].forEach(id => $(id).addEventListener('input', () => { usoDatos = false; }));
+
+function mulberry32(a) { // generador pseudoaleatorio con semilla (la gráfica no cambia al recalcular)
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+function dibujarNormal(mx, sx, my, sy, rho, marca) {
+  let xs, ys, nota;
+  if (usoDatos && datos) {
+    xs = datos.x; ys = datos.y;
+    nota = `Diagrama de dispersión de los datos de la regresión (n = ${datos.n}). La recta es E[Y | X = x] calculada con los parámetros.`;
+  } else {
+    const N = 200, u = mulberry32(2024), s = Math.sqrt(Math.max(0, 1 - rho * rho));
+    xs = []; ys = [];
+    for (let i = 0; i < N; i++) {
+      const m = Math.sqrt(-2 * Math.log(1 - u())), ang = 2 * Math.PI * u(), z1 = m * Math.cos(ang), z2 = m * Math.sin(ang);
+      xs.push(mx + sx * z1); ys.push(my + sy * (rho * z1 + s * z2));
+    }
+    nota = `Diagrama de dispersión ilustrativo: ${N} puntos simulados de una normal bivariada con los parámetros dados. La recta es E[Y | X = x].`;
+  }
+  graficar(xs, ys, x => my + rho * sy / sx * (x - mx), 'X', 'Y', 'grafica-nor', marca);
+  $('nota-nor').textContent = nota + (marca ? ' El punto naranja es (x, y).' : ''); $('nota-nor').hidden = false;
+}
 
 $('n-usar').addEventListener('click', () => {
   if (!datos) { $('msg-nor').textContent = 'Primero calcula la regresión en la sección Regresión.'; return; }
@@ -479,6 +543,7 @@ $('n-usar').addEventListener('click', () => {
   $('n-mx').value = +media(datos.x).toFixed(6); $('n-sx').value = +sd(datos.x).toFixed(6);
   $('n-my').value = +media(datos.y).toFixed(6); $('n-sy').value = +sd(datos.y).toFixed(6);
   $('n-rho').value = +datos.r.toFixed(6);
+  usoDatos = true;
 });
 
 $('n-calcular').addEventListener('click', () => {
@@ -493,7 +558,7 @@ $('n-calcular').addEventListener('click', () => {
     const lim = (id, def) => ($(id).value.trim() === '' ? def : parseFloat($(id).value));
     const inf = a => (Number.isFinite(a) ? fmt(a) : (a > 0 ? '+∞' : '−∞'));
     const zz = (a, m, d) => (Number.isFinite(a) ? fmt((a - m) / d) : inf(a));
-    let html = '';
+    let html = '', marca = null, params = null;
 
     if (modo === 'marg') {
       const esX = $('n-var').value === 'X', V = esX ? 'X' : 'Y';
@@ -502,16 +567,17 @@ $('n-calcular').addEventListener('click', () => {
       const L = num('n-lim', 'el límite');
       if (sd <= 0) throw new Error(`σ${V} debe ser mayor que 0.`);
       const z = (L - mu) / sd, P = cdfN(z);
-      html = `<h3>3. Probabilidad marginal de ${V}</h3>
+      html = `<h3>4. Probabilidad marginal de ${V}</h3>
         ${bloque('Datos:', [`μ${V} = ${fmt(mu)}`, `σ${V} = ${fmt(sd)}`, `límite = ${fmt(L)}`])}
         ${bloque('Resultados:', [`Z = ${fmt(z)}`, `P(${V} ≤ ${fmt(L)}) = ${pr(P)}`, `P(${V} &gt; ${fmt(L)}) = ${pr(1 - P)}`])}
         <p><strong>Desarrollo:</strong></p>
-        ${paso('3.1 Distribución marginal', `En una normal bivariada, ${V} por sí sola es normal con su propia media y desviación (no depende de ρ).`, `${V} ~ N(μ = ${fmt(mu)}, σ = ${fmt(sd)})`)}
-        ${paso('3.2 Valor estandarizado', 'Se convierte el límite a la normal estándar.', `Z = (${V.toLowerCase()} − μ${V}) / σ${V}\nZ = (${fmt(L)} − ${fmt(mu)}) / ${fmt(sd)}\nZ = ${fmt(z)}`)}
-        ${paso('3.3 Probabilidad', 'Se toma el área de la normal estándar.', `P(${V} ≤ ${fmt(L)}) = P(Z ≤ ${fmt(z)}) = ${fmt(P, 4)}\nP(${V} &gt; ${fmt(L)}) = 1 − ${fmt(P, 4)} = ${fmt(1 - P, 4)}`)}`;
+        ${paso('4.1 Distribución marginal', `En una normal bivariada, ${V} por sí sola es normal con su propia media y desviación (no depende de ρ).`, `${V} ~ N(μ = ${fmt(mu)}, σ = ${fmt(sd)})`)}
+        ${paso('4.2 Valor estandarizado', 'Se convierte el límite a la normal estándar.', `Z = (${V.toLowerCase()} − μ${V}) / σ${V}\nZ = (${fmt(L)} − ${fmt(mu)}) / ${fmt(sd)}\nZ = ${fmt(z)}`)}
+        ${paso('4.3 Probabilidad', 'Se toma el área de la normal estándar.', `P(${V} ≤ ${fmt(L)}) = P(Z ≤ ${fmt(z)}) = ${fmt(P, 4)}\nP(${V} &gt; ${fmt(L)}) = 1 − ${fmt(P, 4)} = ${fmt(1 - P, 4)}`)}`;
     } else {
       const mx = num('n-mx', 'μX'), sx = num('n-sx', 'σX'), my = num('n-my', 'μY'), sy = num('n-sy', 'σY'), rho = num('n-rho', 'ρ');
       if (sx <= 0 || sy <= 0) throw new Error('σX y σY deben ser mayores que 0.');
+      params = [mx, sx, my, sy, rho];
       const datosBase = [`μX = ${fmt(mx)}`, `σX = ${fmt(sx)}`, `μY = ${fmt(my)}`, `σY = ${fmt(sy)}`, `ρ = ${fmt(rho)}`];
 
       if (modo === 'lin') {
@@ -521,44 +587,81 @@ $('n-calcular').addEventListener('click', () => {
         const v = a * a * sx * sx + b * b * sy * sy + 2 * a * b * rho * sx * sy, sw = Math.sqrt(v);
         if (!(sw > 1e-12)) throw new Error('La combinación no tiene variación (σ = 0).');
         const z = (c - mw) / sw, P = cdfN(z);
-        html = `<h3>4. Combinación lineal aX + bY</h3>
+        html = `<h3>5. Combinación lineal aX + bY</h3>
           ${bloque('Datos:', [...datosBase, `a = ${fmt(a)}`, `b = ${fmt(b)}`, `c = ${fmt(c)}`])}
           ${bloque('Resultados:', [`μ = ${fmt(mw)}`, `σ² = ${fmt(v)}`, `σ = ${fmt(sw)}`, `Z = ${fmt(z)}`, `P(aX + bY ≤ ${fmt(c)}) = ${pr(P)}`, `P(aX + bY &gt; ${fmt(c)}) = ${pr(1 - P)}`])}
           <p><strong>Desarrollo:</strong></p>
-          ${paso('4.1 Media', 'La media de una combinación lineal es la combinación de las medias.', `μ = a·μX + b·μY\nμ = (${fmt(a)})(${fmt(mx)}) + (${fmt(b)})(${fmt(my)})\nμ = ${fmt(mw)}`)}
-          ${paso('4.2 Varianza y desviación estándar', 'Incluye el término de covarianza 2ab·ρ·σX·σY.', `σ² = a²σX² + b²σY² + 2ab·ρ·σX·σY\nσ² = (${fmt(a)})²(${fmt(sx)})² + (${fmt(b)})²(${fmt(sy)})² + 2(${fmt(a)})(${fmt(b)})(${fmt(rho)})(${fmt(sx)})(${fmt(sy)})\nσ² = ${fmt(v)}\nσ = ${fmt(sw)}`)}
-          ${paso('4.3 Valor estandarizado', 'Se convierte c a la normal estándar.', `Z = (c − μ) / σ\nZ = (${fmt(c)} − ${fmt(mw)}) / ${fmt(sw)}\nZ = ${fmt(z)}`)}
-          ${paso('4.4 Probabilidad', 'Se toma el área de la normal estándar.', `P(aX + bY ≤ ${fmt(c)}) = P(Z ≤ ${fmt(z)}) = ${fmt(P, 4)}\nP(aX + bY &gt; ${fmt(c)}) = 1 − ${fmt(P, 4)} = ${fmt(1 - P, 4)}`)}`;
+          ${paso('5.1 Media', 'La media de una combinación lineal es la combinación de las medias.', `μ = a·μX + b·μY\nμ = (${fmt(a)})(${fmt(mx)}) + (${fmt(b)})(${fmt(my)})\nμ = ${fmt(mw)}`)}
+          ${paso('5.2 Varianza y desviación estándar', 'Incluye el término de covarianza 2ab·ρ·σX·σY.', `σ² = a²σX² + b²σY² + 2ab·ρ·σX·σY\nσ² = (${fmt(a)})²(${fmt(sx)})² + (${fmt(b)})²(${fmt(sy)})² + 2(${fmt(a)})(${fmt(b)})(${fmt(rho)})(${fmt(sx)})(${fmt(sy)})\nσ² = ${fmt(v)}\nσ = ${fmt(sw)}`)}
+          ${paso('5.3 Valor estandarizado', 'Se convierte c a la normal estándar.', `Z = (c − μ) / σ\nZ = (${fmt(c)} − ${fmt(mw)}) / ${fmt(sw)}\nZ = ${fmt(z)}`)}
+          ${paso('5.4 Probabilidad', 'Se toma el área de la normal estándar.', `P(aX + bY ≤ ${fmt(c)}) = P(Z ≤ ${fmt(z)}) = ${fmt(P, 4)}\nP(aX + bY &gt; ${fmt(c)}) = 1 − ${fmt(P, 4)} = ${fmt(1 - P, 4)}`)}`;
       } else {
         if (!(Math.abs(rho) < 1)) throw new Error('ρ debe estar entre −1 y 1 (sin incluirlos).');
         if (modo === 'cond') {
           const x0 = num('n-x0', 'x₀'), y0 = num('n-y0', 'y₀');
+          marca = { x: x0, y: y0 };
           const cov = rho * sx * sy, mc = my + rho * (sy / sx) * (x0 - mx), sc = sy * Math.sqrt(1 - rho * rho);
           const z = (y0 - mc) / sc, P = cdfN(z);
-          html = `<h3>1. Parámetros y condicional (dado X = x₀)</h3>
+          html = `<h3>2. Parámetros y condicional (dado X = x₀)</h3>
             ${bloque('Datos:', [...datosBase, `x₀ = ${fmt(x0)}`, `y₀ = ${fmt(y0)}`])}
             ${bloque('Resultados:', [`Cov(X,Y) = ${fmt(cov)}`, `μY|X=x₀ = ${fmt(mc)}`, `σY|X=x₀ = ${fmt(sc)}`, `Z = ${fmt(z)}`, `P(Y ≤ ${fmt(y0)} | X = ${fmt(x0)}) = ${pr(P)}`, `P(Y &gt; ${fmt(y0)} | X = ${fmt(x0)}) = ${pr(1 - P)}`])}
             <p><strong>Desarrollo:</strong></p>
-            ${paso('1.1 Covarianza Cov(X,Y)', 'Mide el grado de variación conjunta de X y Y.', `Cov(X,Y) = ρ·σX·σY\nCov(X,Y) = (${fmt(rho)})(${fmt(sx)})(${fmt(sy)})\nCov(X,Y) = ${fmt(cov)}`)}
-            ${paso('1.2 Media condicional μY|X=x₀', 'Es el valor esperado de Y cuando X vale exactamente x₀.', `μY|x₀ = μY + ρ(σY/σX)(x₀ − μX)\nμY|x₀ = ${fmt(my)} + (${fmt(rho)})(${fmt(sy)}/${fmt(sx)})(${fmt(x0)} − ${fmt(mx)})\nμY|x₀ = ${fmt(mc)}`)}
-            ${paso('1.3 Desviación estándar condicional σY|X=x₀', 'Indica cuánto varía Y alrededor de esa media condicional.', `σY|x₀ = σY·√(1 − ρ²)\nσY|x₀ = ${fmt(sy)}·√(1 − (${fmt(rho)})²)\nσY|x₀ = ${fmt(sy)}·√${fmt(1 - rho * rho)}\nσY|x₀ = ${fmt(sc)}`)}
-            ${paso('1.4 Valor estandarizado Z', 'Convierte el límite y₀ a la normal estándar usando la media y desviación condicionales.', `Z = (y₀ − μY|x₀) / σY|x₀\nZ = (${fmt(y0)} − ${fmt(mc)}) / ${fmt(sc)}\nZ = ${fmt(z)}`)}
-            ${paso('1.5 Probabilidades condicionales', 'Se toma el área de la normal estándar.', `P(Y ≤ ${fmt(y0)} | X = ${fmt(x0)}) = P(Z ≤ ${fmt(z)}) = ${fmt(P, 4)}\nP(Y &gt; ${fmt(y0)} | X = ${fmt(x0)}) = 1 − ${fmt(P, 4)} = ${fmt(1 - P, 4)}`)}`;
+            ${paso('2.1 Covarianza Cov(X,Y)', 'Mide el grado de variación conjunta de X y Y.', `Cov(X,Y) = ρ·σX·σY\nCov(X,Y) = (${fmt(rho)})(${fmt(sx)})(${fmt(sy)})\nCov(X,Y) = ${fmt(cov)}`)}
+            ${paso('2.2 Media condicional μY|X=x₀', 'Es el valor esperado de Y cuando X vale exactamente x₀.', `μY|x₀ = μY + ρ(σY/σX)(x₀ − μX)\nμY|x₀ = ${fmt(my)} + (${fmt(rho)})(${fmt(sy)}/${fmt(sx)})(${fmt(x0)} − ${fmt(mx)})\nμY|x₀ = ${fmt(mc)}`)}
+            ${paso('2.3 Desviación estándar condicional σY|X=x₀', 'Indica cuánto varía Y alrededor de esa media condicional.', `σY|x₀ = σY·√(1 − ρ²)\nσY|x₀ = ${fmt(sy)}·√(1 − (${fmt(rho)})²)\nσY|x₀ = ${fmt(sy)}·√${fmt(1 - rho * rho)}\nσY|x₀ = ${fmt(sc)}`)}
+            ${paso('2.4 Valor estandarizado Z', 'Convierte el límite y₀ a la normal estándar usando la media y desviación condicionales.', `Z = (y₀ − μY|x₀) / σY|x₀\nZ = (${fmt(y0)} − ${fmt(mc)}) / ${fmt(sc)}\nZ = ${fmt(z)}`)}
+            ${paso('2.5 Probabilidades condicionales', 'Se toma el área de la normal estándar.', `P(Y ≤ ${fmt(y0)} | X = ${fmt(x0)}) = P(Z ≤ ${fmt(z)}) = ${fmt(P, 4)}\nP(Y &gt; ${fmt(y0)} | X = ${fmt(x0)}) = 1 − ${fmt(P, 4)} = ${fmt(1 - P, 4)}`)}`;
         } else if (modo === 'dens') {
-          const x0 = num('n-fx', 'x₀'), y0 = num('n-fy', 'y₀');
-          const zx = (x0 - mx) / sx, zy = (y0 - my) / sy, q = 1 - rho * rho;
-          const cte = 1 / (2 * Math.PI * sx * sy * Math.sqrt(q));
-          const ex = -1 / (2 * q) * (zx * zx - 2 * rho * zx * zy + zy * zy);
-          const f = cte * Math.exp(ex);
-          html = `<h3>5. Densidad conjunta f(x₀, y₀)</h3>
-            ${bloque('Datos:', [...datosBase, `x₀ = ${fmt(x0)}`, `y₀ = ${fmt(y0)}`])}
-            ${bloque('Resultados:', [`Z de X = ${fmt(zx)}`, `Z de Y = ${fmt(zy)}`, `Constante = ${fmtP(cte)}`, `Exponente = ${fmt(ex)}`, `f(${fmt(x0)}, ${fmt(y0)}) = ${fmtP(f)}`])}
-            <p>La densidad es la altura de la función en ese punto, no una probabilidad (P(X = x₀, Y = y₀) vale 0 en variables continuas).</p>
+          const punto = $('n-punto').checked;
+          const q = 1 - rho * rho, sq = Math.sqrt(q);
+          const cov = rho * sx * sy, vx = sx * sx, vy = sy * sy, det = vx * vy * q;
+          const cte = 1 / (2 * Math.PI * sx * sy * sq);
+          const bYX = rho * sy / sx, aYX = my - bYX * mx, sYX = sy * sq;
+          const bXY = rho * sx / sy, aXY = mx - bXY * my, sXY = sx * sq;
+
+          const resBase = [
+            `Cov(X,Y) = ${fmt(cov)}`, `σX² = ${fmt(vx)}`, `σY² = ${fmt(vy)}`, `|Σ| = ${fmt(det)}`, `ρ² = ${fmt(rho * rho)}`,
+            `Constante = ${fmtP(cte)}`,
+            `X ~ N(μ = ${fmt(mx)}, σ = ${fmt(sx)})`, `Y ~ N(μ = ${fmt(my)}, σ = ${fmt(sy)})`,
+            `μY|X=x = ${fmt(aYX)} ${signo(bYX)}·x`, `σY|X = ${fmt(sYX)}`,
+            `μX|Y=y = ${fmt(aXY)} ${signo(bXY)}·y`, `σX|Y = ${fmt(sXY)}`];
+          const pasosBase = `
+            ${paso('1.1 Covarianza Cov(X,Y)', 'Mide la variación conjunta de X y Y; se obtiene directamente de ρ y las desviaciones.', `Cov(X,Y) = ρ·σX·σY\nCov(X,Y) = (${fmt(rho)})(${fmt(sx)})(${fmt(sy)})\nCov(X,Y) = ${fmt(cov)}`)}
+            ${paso('1.2 Varianzas, matriz de covarianzas y determinante', 'Las varianzas son los cuadrados de las desviaciones. El determinante aparece en la constante de la densidad.', `σX² = (${fmt(sx)})² = ${fmt(vx)}\nσY² = (${fmt(sy)})² = ${fmt(vy)}\n\nΣ = | σX²  Cov |  =  | ${fmt(vx)}  ${fmt(cov)} |\n    | Cov  σY² |     | ${fmt(cov)}  ${fmt(vy)} |\n\n|Σ| = σX²·σY²·(1 − ρ²) = ${fmt(vx)}·${fmt(vy)}·${fmt(q)} = ${fmt(det)}`)}
+            ${paso('1.3 Constante de la densidad', 'Es el factor que multiplica a la exponencial; solo depende de σX, σY y ρ.', `1 / (2π·σX·σY·√(1 − ρ²))\n= 1 / (2π·${fmt(sx)}·${fmt(sy)}·√(1 − (${fmt(rho)})²))\n= 1 / (2π·${fmt(sx)}·${fmt(sy)}·${fmt(sq)})\n= ${fmtP(cte)}`)}
+            ${paso('1.4 Distribuciones marginales', 'En una normal bivariada, cada variable por sí sola es normal con su propia media y desviación; ρ no interviene.', `X ~ N(μX = ${fmt(mx)}, σX = ${fmt(sx)})\nY ~ N(μY = ${fmt(my)}, σY = ${fmt(sy)})`)}
+            ${paso('1.5 Distribuciones condicionales', 'La media condicional es una recta en el valor dado; la desviación condicional es constante. Quedan listas para evaluarse en cualquier x o y.', `μY|X=x = μY + ρ(σY/σX)(x − μX) = ${fmt(aYX)} ${signo(bYX)}·x\nσY|X = σY·√(1 − ρ²) = ${fmt(sYX)}\nμX|Y=y = μX + ρ(σX/σY)(y − μY) = ${fmt(aXY)} ${signo(bXY)}·y\nσX|Y = σX·√(1 − ρ²) = ${fmt(sXY)}`)}`;
+
+          let datosPunto = [], resPunto = [], pasosPunto = '';
+          if (punto) {
+            const x = num('n-fx', 'x'), y = num('n-fy', 'y');
+            const zx = (x - mx) / sx, zy = (y - my) / sy;
+            const ex = -1 / (2 * q) * (zx * zx - 2 * rho * zx * zy + zy * zy), f = cte * Math.exp(ex);
+            const fX = pdfN(zx) / sx, fY = pdfN(zy) / sy;
+            const PX = cdfN(zx), PY = cdfN(zy), Pxy = Math.min(1, Math.max(0, cdfBiv(x, y, mx, sx, my, sy, rho)));
+            const mcY = aYX + bYX * x, mcX = aXY + bXY * y;
+            const PYx = cdfN((y - mcY) / sYX), PXy = cdfN((x - mcX) / sXY);
+            marca = { x, y };
+            datosPunto = [`x = ${fmt(x)}`, `y = ${fmt(y)}`];
+            resPunto = [`Z de X = ${fmt(zx)}`, `Z de Y = ${fmt(zy)}`, `Exponente = ${fmt(ex)}`,
+              `f(${fmt(x)}, ${fmt(y)}) = ${fmtP(f)}`, `fX(${fmt(x)}) = ${fmtP(fX)}`, `fY(${fmt(y)}) = ${fmtP(fY)}`,
+              `P(X ≤ ${fmt(x)}) = ${pr(PX)}`, `P(Y ≤ ${fmt(y)}) = ${pr(PY)}`, `P(X ≤ ${fmt(x)}, Y ≤ ${fmt(y)}) = ${pr(Pxy)}`,
+              `μY|X=${fmt(x)} = ${fmt(mcY)}`, `P(Y ≤ ${fmt(y)} | X = ${fmt(x)}) = ${pr(PYx)}`,
+              `μX|Y=${fmt(y)} = ${fmt(mcX)}`, `P(X ≤ ${fmt(x)} | Y = ${fmt(y)}) = ${pr(PXy)}`];
+            pasosPunto = `
+            ${paso('1.6 Valores estandarizados', 'Se convierten x y y con Z = (valor − μ) / σ.', `Z de X = (${fmt(x)} − ${fmt(mx)}) / ${fmt(sx)} = ${fmt(zx)}\nZ de Y = (${fmt(y)} − ${fmt(my)}) / ${fmt(sy)} = ${fmt(zy)}`)}
+            ${paso('1.7 Exponente', 'Combina las dos variables estandarizadas y la correlación.', `−1/(2(1 − ρ²)) · [Z_X² − 2ρ·Z_X·Z_Y + Z_Y²]\n= −1/(2(${fmt(q)})) · [(${fmt(zx)})² − 2(${fmt(rho)})(${fmt(zx)})(${fmt(zy)}) + (${fmt(zy)})²]\n= ${fmt(ex)}`)}
+            ${paso('1.8 Densidad conjunta f(x, y)', 'Se multiplica la constante por e elevado al exponente.', `f(x, y) = constante · e^(exponente)\nf(${fmt(x)}, ${fmt(y)}) = ${fmtP(cte)} · e^(${fmt(ex)})\nf(${fmt(x)}, ${fmt(y)}) = ${fmtP(f)}`)}
+            ${paso('1.9 Densidades marginales y probabilidades acumuladas', 'Con el punto también se evalúan las marginales y P(X ≤ x, Y ≤ y). Esta última no tiene fórmula cerrada; el programa la integra numéricamente (regla de Simpson).', `fX(x) = φ(Z_X)/σX = ${fmtP(fX)}\nfY(y) = φ(Z_Y)/σY = ${fmtP(fY)}\nP(X ≤ ${fmt(x)}) = P(Z ≤ ${fmt(zx)}) = ${fmt(PX, 4)}\nP(Y ≤ ${fmt(y)}) = P(Z ≤ ${fmt(zy)}) = ${fmt(PY, 4)}\nP(X ≤ ${fmt(x)}, Y ≤ ${fmt(y)}) = ${fmt(Pxy, 4)}`)}
+            ${paso('1.10 Condicionales en el punto', 'Se usan las medias y desviaciones condicionales del paso 1.5.', `μY|X=${fmt(x)} = ${fmt(aYX)} ${signo(bYX)}·(${fmt(x)}) = ${fmt(mcY)}\nP(Y ≤ ${fmt(y)} | X = ${fmt(x)}) = P(Z ≤ (${fmt(y)} − ${fmt(mcY)}) / ${fmt(sYX)}) = ${fmt(PYx, 4)}\nμX|Y=${fmt(y)} = ${fmt(aXY)} ${signo(bXY)}·(${fmt(y)}) = ${fmt(mcX)}\nP(X ≤ ${fmt(x)} | Y = ${fmt(y)}) = P(Z ≤ (${fmt(x)} − ${fmt(mcX)}) / ${fmt(sXY)}) = ${fmt(PXy, 4)}`)}`;
+          }
+
+          html = `<h3>1. Densidad conjunta de la normal bivariada${punto ? ' f(x, y)' : ''}</h3>
+            ${bloque('Datos:', [...datosBase, ...datosPunto])}
+            ${bloque('Resultados con μX, σX, μY, σY y ρ:', resBase)}
+            ${punto ? bloque('Resultados en el punto (x, y):', resPunto) + '<p>La densidad es la altura de la función en ese punto, no una probabilidad (P(X = x, Y = y) vale 0 en variables continuas).</p>' : ''}
             <p><strong>Desarrollo:</strong></p>
-            ${paso('5.1 Valores estandarizados', 'Se convierten x₀ y y₀ con Z = (valor − μ) / σ.', `Z de X = (${fmt(x0)} − ${fmt(mx)}) / ${fmt(sx)} = ${fmt(zx)}\nZ de Y = (${fmt(y0)} − ${fmt(my)}) / ${fmt(sy)} = ${fmt(zy)}`)}
-            ${paso('5.2 Constante', 'Es el factor que multiplica a la exponencial.', `1 / (2π·σX·σY·√(1 − ρ²))\n= 1 / (2π·${fmt(sx)}·${fmt(sy)}·√(1 − (${fmt(rho)})²))\n= 1 / (2π·${fmt(sx)}·${fmt(sy)}·${fmt(Math.sqrt(q))})\n= ${fmtP(cte)}`)}
-            ${paso('5.3 Exponente', 'Combina las dos variables estandarizadas y la correlación.', `−1/(2(1 − ρ²)) · [Z_X² − 2ρ·Z_X·Z_Y + Z_Y²]\n= −1/(2(${fmt(q)})) · [(${fmt(zx)})² − 2(${fmt(rho)})(${fmt(zx)})(${fmt(zy)}) + (${fmt(zy)})²]\n= ${fmt(ex)}`)}
-            ${paso('5.4 Densidad conjunta', 'Se multiplica la constante por e elevado al exponente.', `f(x₀, y₀) = constante · e^(exponente)\nf(${fmt(x0)}, ${fmt(y0)}) = ${fmtP(cte)} · e^(${fmt(ex)})\nf(${fmt(x0)}, ${fmt(y0)}) = ${fmtP(f)}`)}`;
+            ${pasosBase}${pasosPunto}`;
         } else {
           const x1 = lim('n-x1', -Infinity), x2 = lim('n-x2', Infinity), y1 = lim('n-y1', -Infinity), y2 = lim('n-y2', Infinity);
           if (['n-x1', 'n-x2', 'n-y1', 'n-y2'].every(id => $(id).value.trim() === '')) throw new Error('Escribe al menos un límite (x₁, x₂, y₁ o y₂).');
@@ -567,16 +670,18 @@ $('n-calcular').addEventListener('click', () => {
           const Fa = F(x2, y2), Fb = F(x1, y2), Fc = F(x2, y1), Fd = F(x1, y1);
           const P = Math.min(1, Math.max(0, Fa - Fb - Fc + Fd));
           const vacio = id => ($(id).value.trim() === '' ? ' (no se escribió)' : '');
-          html = `<h3>2. Probabilidad conjunta</h3>
+          html = `<h3>3. Probabilidad conjunta por rangos</h3>
             ${bloque('Datos:', [...datosBase, `x₁ = ${inf(x1)}${vacio('n-x1')}`, `x₂ = ${inf(x2)}${vacio('n-x2')}`, `y₁ = ${inf(y1)}${vacio('n-y1')}`, `y₂ = ${inf(y2)}${vacio('n-y2')}`])}
             ${bloque('Resultados:', [`P(${inf(x1)} ≤ X ≤ ${inf(x2)}, ${inf(y1)} ≤ Y ≤ ${inf(y2)}) = ${pr(P)}`])}
             <p><strong>Desarrollo:</strong></p>
-            ${paso('2.1 Estandarizar los límites', 'Cada límite se convierte con Z = (límite − μ) / σ.', `Z de x₁ = ${zz(x1, mx, sx)}    Z de x₂ = ${zz(x2, mx, sx)}\nZ de y₁ = ${zz(y1, my, sy)}    Z de y₂ = ${zz(y2, my, sy)}`)}
-            ${paso('2.2 Probabilidad del área P(x₁ ≤ X ≤ x₂, y₁ ≤ Y ≤ y₂)', 'Se resta la probabilidad acumulada F(a,b) = P(X ≤ a, Y ≤ b) de las esquinas del rectángulo. F no tiene fórmula cerrada; el programa la integra numéricamente (regla de Simpson) con ρ = ' + fmt(rho) + '.', `P = F(x₂,y₂) − F(x₁,y₂) − F(x₂,y₁) + F(x₁,y₁)\nP = ${fmt(Fa, 6)} − ${fmt(Fb, 6)} − ${fmt(Fc, 6)} + ${fmt(Fd, 6)}\nP = ${fmt(P, 6)}`)}`;
+            ${paso('3.1 Estandarizar los límites', 'Cada límite se convierte con Z = (límite − μ) / σ.', `Z de x₁ = ${zz(x1, mx, sx)}    Z de x₂ = ${zz(x2, mx, sx)}\nZ de y₁ = ${zz(y1, my, sy)}    Z de y₂ = ${zz(y2, my, sy)}`)}
+            ${paso('3.2 Probabilidad del área P(x₁ ≤ X ≤ x₂, y₁ ≤ Y ≤ y₂)', 'Se resta la probabilidad acumulada F(a,b) = P(X ≤ a, Y ≤ b) de las esquinas del rectángulo. F no tiene fórmula cerrada; el programa la integra numéricamente (regla de Simpson) con ρ = ' + fmt(rho) + '.', `P = F(x₂,y₂) − F(x₁,y₂) − F(x₂,y₁) + F(x₁,y₁)\nP = ${fmt(Fa, 6)} − ${fmt(Fb, 6)} − ${fmt(Fc, 6)} + ${fmt(Fd, 6)}\nP = ${fmt(P, 6)}`)}`;
         }
       }
     }
     $('res-nor').innerHTML = html;
+    if (params) dibujarNormal(...params, marca);
+    else { $('grafica-nor').hidden = true; $('nota-nor').hidden = true; }
   } catch (e) {
     $('msg-nor').textContent = e.message;
   }
@@ -584,4 +689,5 @@ $('n-calcular').addEventListener('click', () => {
 
 /* ================= Inicio ================= */
 construirTabla();
+modoCor();
 modoNormal();
